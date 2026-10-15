@@ -65,7 +65,16 @@ h2:focus{outline:none}
 .summary dt{color:var(--muted)}
 .summary dd{margin:0;overflow-wrap:anywhere}
 .restart{margin-top:6px}
-@keyframes enter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.carrossel{position:relative;width:100%;max-width:400px;margin:0 auto;aspect-ratio:4/5;overflow:hidden;border-radius:14px;border:1px solid var(--border);background:var(--card)}
+.carrossel-trilho{display:flex;height:100%;transition:transform .45s ease}
+.carrossel-trilho img{flex:0 0 100%;width:100%;height:100%;object-fit:cover}
+.seta{position:absolute;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;border:0;background:rgba(34,42,48,.8);color:var(--text);font-size:22px;line-height:1;display:grid;place-items:center}
+.seta.esq{left:8px}
+.seta.dir{right:8px}
+.pontos{position:absolute;bottom:10px;left:0;right:0;display:flex;justify-content:center;gap:6px}
+.ponto{width:8px;height:8px;border-radius:50%;border:0;background:rgba(255,255,255,.5);padding:0}
+.ponto[aria-current=true]{background:var(--accent)}
+.carrossel + .desc{text-align:center;margin:12px 0 0}@keyframes enter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:560px){.shell{padding:18px 18px 22px}.brand img{width:72px;height:72px}.label{display:none}.summary .row{grid-template-columns:100px 1fr}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
 </style>
@@ -93,12 +102,15 @@ const TIPO_COMERCIO='Comércio ou empresa na cidade';
 const ehRural=a=>a.tipo===TIPO_FAZENDA||a.tipo===TIPO_FLORESTAL;
 const ehResidencia=a=>a.tipo===TIPO_RESIDENCIA;
 const ehComercio=a=>a.tipo===TIPO_COMERCIO;
+const FOTOS=['fotos/instalacao-1.jpg','fotos/instalacao-2.jpg','fotos/instalacao-3.jpg','fotos/instalacao-4.jpg','fotos/instalacao-5.jpg','fotos/instalacao-6.jpg'];
+let carrosselTimer=null;
 const questions=[
  {id:'tipo',resumo:'Imóvel',group:'Seu imóvel',title:'Qual é o tipo do imóvel que você quer proteger?',options:[TIPO_FAZENDA,TIPO_FLORESTAL,TIPO_RESIDENCIA,TIPO_COMERCIO]},
  {id:'service',resumo:'Serviço',group:'Serviço',title:'Qual serviço você procura?',when:ehRural,options:['Alarme e câmeras para a propriedade','Cerca eletrônica','Mais de um serviço','Ainda não sei']},
  {id:'theft',resumo:'Furto ou invasão',group:'Sua propriedade',title:'A propriedade já sofreu furto ou invasão?',when:ehRural,options:['Sim, furto de gado','Sim, furto de equipamentos ou materiais','Tentativa de invasão','Não, quero prevenir']},
  {id:'power',resumo:'Energia',group:'Sua propriedade',title:'O local tem energia elétrica da rede?',when:ehRural,options:['Sim, e é estável','Sim, mas cai com frequência','Não tem energia no local']},
  {id:'area',resumo:'Área',group:'Sua propriedade',title:'Qual é o tamanho aproximado da área?',when:ehRural,options:['Até 5 hectares','De 5 a 20 hectares','Mais de 20 hectares','Não sei informar']},
+ {id:'vitrine',tipo:'carrossel',group:'Instalações',title:'Veja instalações como a que você pode ter',when:ehRural},
  {id:'housetype',resumo:'Residência',group:'Sua residência',title:'Qual é o tipo de residência?',when:ehResidencia,options:['Casa','Sobrado','Apartamento ou casa em condomínio','Outro']},
  {id:'protect',resumo:'O que proteger',group:'Sua residência',title:'O que você quer proteger?',when:ehResidencia,options:['Casa inteira (alarme e câmeras)','Apenas câmeras','Portão, muro ou cerca eletrônica','Ainda não sei']},
  {id:'theftRes',resumo:'Furto ou invasão',group:'Sua residência',title:'Você já sofreu furto ou invasão?',when:ehResidencia,options:['Sim, na própria casa','Sim, no meu bairro','Não, quero prevenir']},
@@ -118,6 +130,7 @@ function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;'
 function focusTitle(){main.querySelector('h2')?.focus({preventScroll:true});window.scrollTo({top:0});}
 function render(){
  clearTimeout(autoAdvanceTimer);autoAdvanceTimer=null;
+ clearInterval(carrosselTimer);carrosselTimer=null;
  const lista=perguntasAtivas(),total=lista.length,finished=step>=total,completed=Math.min(step,total);
  const pct=Math.round(completed/total*100);
  document.getElementById('progressPercent').textContent=pct+'%';
@@ -129,6 +142,7 @@ function render(){
  focusTitle();
 }
 function renderQuestion(q){
+ if(q.tipo==='carrossel')return renderCarrossel(q);
  const corpo=q.options
   ?`<div class="options" role="radiogroup" aria-labelledby="questionTitle">${q.options.map((opcao,i)=>`<button type="button" class="option" role="radio" aria-checked="${answers[q.id]===opcao}" data-index="${i}" tabindex="${answers[q.id]===opcao||(!answers[q.id]&&i===0)?0:-1}"><span class="key" aria-hidden="true">${String.fromCharCode(65+i)}</span><span>${esc(opcao)}</span><span class="check" aria-hidden="true">✓</span></button>`).join('')}</div>`
   :`<input class="field" id="answer" aria-label="${esc(q.label)}" aria-describedby="description error" type="${q.type||'text'}" ${q.type==='tel'?'inputmode="tel"':''} autocomplete="${q.autocomplete}" maxlength="${q.type==='tel'?20:120}" placeholder="${esc(q.placeholder)}" value="${esc(answers[q.id])}" required>`;
@@ -148,6 +162,23 @@ function renderQuestion(q){
  }
  document.getElementById('questionForm').onsubmit=evento=>{evento.preventDefault();advance();};
 }
+function renderCarrossel(q){
+ main.innerHTML=`<section class="screen"><div class="step-label"><b>${step+1}</b>${esc(q.group)}</div><h2 id="questionTitle" tabindex="-1">${esc(q.title)}</h2><div class="carrossel"><div class="carrossel-trilho" id="trilho">${FOTOS.map((foto,i)=>`<img src="${foto}" alt="Instalação rural feita pela RC, foto ${i+1}" loading="${i?'lazy':'eager'}">`).join('')}</div><button type="button" class="seta esq" id="antes" aria-label="Foto anterior">‹</button><button type="button" class="seta dir" id="depois" aria-label="Próxima foto">›</button><div class="pontos">${FOTOS.map((_,i)=>`<button type="button" class="ponto" data-i="${i}" aria-label="Ver foto ${i+1}"></button>`).join('')}</div></div><p class="desc">Instalações feitas pela RC em propriedades rurais.</p><div class="actions"><button class="primary" type="button" id="avancar">Continuar →</button></div></section>`;
+ let atual=0;
+ const trilho=document.getElementById('trilho');
+ const pontos=main.querySelectorAll('.ponto');
+ const irPara=i=>{
+  atual=(i+FOTOS.length)%FOTOS.length;
+  trilho.style.transform=`translateX(-${atual*100}%)`;
+  pontos.forEach((p,j)=>p.setAttribute('aria-current',j===atual));
+ };
+ irPara(0);
+ document.getElementById('antes').onclick=()=>irPara(atual-1);
+ document.getElementById('depois').onclick=()=>irPara(atual+1);
+ pontos.forEach(p=>p.onclick=()=>irPara(Number(p.dataset.i)));
+ document.getElementById('avancar').onclick=advance;
+ if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)carrosselTimer=setInterval(()=>irPara(atual+1),4500);
+}
 function selectOption(index){
  const q=perguntasAtivas()[step];
  if(!q?.options?.[index])return;
@@ -160,6 +191,7 @@ function selectOption(index){
 }
 function advance(){
  const q=perguntasAtivas()[step];
+ if(q.tipo==='carrossel'){clearInterval(carrosselTimer);carrosselTimer=null;step++;render();return;}
  const value=(answers[q.id]||'').trim();
  let error='';
  if(!value)error=q.options?'Selecione uma opção para continuar.':'Preencha este campo para continuar.';
@@ -176,7 +208,7 @@ function advance(){
  render();
 }
 function renderFinal(lista){
- const rows=lista.filter(q=>answers[q.id]).map(q=>[q.resumo,answers[q.id]]);
+ const rows=lista.filter(q=>q.resumo&&answers[q.id]).map(q=>[q.resumo,answers[q.id]]);
  const message='Olá, RC Soluções em Segurança! Fiz o diagnóstico no site e gostaria de receber uma estimativa.\n\n'+rows.map(([label,valor])=>label+': '+valor).join('\n');
  const waLink=(WHATSAPP_NUMERO?'https://wa.me/'+WHATSAPP_NUMERO:'https://wa.me/')+'?text='+encodeURIComponent(message);
  const digitosLead=(answers.phone||'').replace(/\D/g,'');
